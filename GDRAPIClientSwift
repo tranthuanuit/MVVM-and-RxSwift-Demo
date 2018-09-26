@@ -1,0 +1,22 @@
+class GDRAPIClient {
+    func internalRequest(withDict dict: [AnyHashable : Any]?, isPostMethod isPost: Bool, path strPath: String?, isJSONResponse isJSON: Bool, useToken: Bool, isCache iscache: Bool, successBlock success: @escaping (_ task: URLSessionDataTask?, _ responseObject: Any?) -> Void, failure: @escaping (_ task: URLSessionDataTask?, _ error: Error?) -> Void) {
+
+        let url = gdrUtils.sharedUtils().hostInfo() + (strPath ?? "")
+
+        log(url)
+
+        if iscache {
+            AFNetworkingHelper.shared().internalRequest(withDict: dict, isPostMethod: isPost, path: url, isJSONResponse: isJSON, useToken: useToken, isCache: iscache, successBlock: success, failure: failure)
+        } else {
+            AFNetworkingHelper.shared().internalRequest(withDict: dict, isPostMethod: isPost, path: url, isJSONResponse: isJSON, useToken: useToken, successBlock: success, failure: failure)
+        }
+    }
+
+    func internalRequest(_ dict: [AnyHashable : Any]?, method: Int, path strPath: String?, isJSONResponse isJSON: Bool, useToken: Bool, isCache iscache: Bool, successBlock success: @escaping (_ task: URLSessionDataTask?, _ responseObject: Any?) -> Void, failure: @escaping (_ task: URLSessionDataTask?, _ error: Error?) -> Void) -> URLSessionDataTask? {
+        let url = gdrUtils.sharedUtils().hostInfo() + (strPath ?? "")
+
+        log(url)
+
+        return AFNetworkingHelper.shared().internalRequest(dict, method: method, path: url, isJSONResponse: isJSON, useToken: useToken, isCache: iscache, successBlock: success, failure: failure)
+    }
+}
