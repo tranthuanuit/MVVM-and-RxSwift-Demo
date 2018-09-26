@@ -1,0 +1,1632 @@
+#import "AFNetworkingHelper.h"
+//#import <AFNetworking/AFHTTPRequestOperation.h>
+#import "gdrURLManager.h"
+#import "mUserGroup.h"
+#import "Reachability.h"
+#import "gdrUtils.h"
+#import "Endpoints.h"
+#import "PopupUtil.h"
+#import "AppInstallation.h"
+#import "UIView+Toast.h"
+
+#define VERSION 8
+static NSInteger const SERVER_FAILED = 500;
+static NSInteger const EXPIRED_TOKEN = 401;
+static NSInteger const OTHERS_ERROR = 1;
+
+static int const REST_GET = 0;
+static int const REST_POST = 1;
+static int const REST_PUT = 2;
+static int const REST_PATCH = 3;
+static int const REST_DELETE = 4;
+
+@interface AFNetworkingHelper()
+{
+    NSMutableData *_responseData;
+}
+@end
+
+@implementation AFNetworkingHelper
+
++ (AFNetworkingHelper *)sharedClient {
+    static AFNetworkingHelper *_sharedClient = nil;
+    static dispatch_once_t oncePredicate;
+    dispatch_once(&oncePredicate, ^{
+        //session config
+        NSURLSessionConfiguration *sessionConfiguration = [NSURLSessionConfiguration defaultSessionConfiguration];
+        _sharedClient = [[self alloc] initWithSessionConfiguration:sessionConfiguration];
+    });
+    _sharedClient.responseSerializer = [AFJSONResponseSerializer serializer];
+    _sharedClient.requestSerializer = [AFJSONRequestSerializer serializer];
+    //    [_sharedClient.operationQueue cancelAllOperations];
+    return _sharedClient;
+}
+
+- (instancetype)initWithBaseURL:(NSURL *)url {
+    
+    self = [super initWithBaseURL:url];
+    if (!self) {
+        return nil;
+    }
+    
+    self.responseSerializer = [AFJSONResponseSerializer serializer];
+    self.requestSerializer = [AFJSONRequestSerializer serializer];
+    return self;
+}
+
+
+
+//invite code
+-(void)loadInviteSignUp:(NSString *)inviteCode success:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSDictionary *params=nil;
+    params = @{@"Code":inviteCode,@"Lang":[[gdrUtils sharedUtils] DeviceLanguageCode]};
+    
+    [self internalRequestWithDict:params isPostMethod:YES path:[gdrURLManager loadInviteSignUp] isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+}
+
+//login
+-(void)loginWithUsername:(NSString*)username password:(NSString*)password
+                 success:(void(^)(NSURLSessionDataTask *task, id responseObject))success
+                 failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure
+{
+    NSString* path = [gdrURLManager loginURLString];
+    
+    AFHTTPSessionManager *manager = [AFHTTPSessionManager manager];
+    self.requestSerializer = [AFJSONRequestSerializer serializer];
+    self.responseSerializer = [AFJSONResponseSerializer serializer];
+    
+    //with account from email|phone and password
+    //Change params if sign in with Facebook, Google account
+    NSDictionary *params=nil;
+    
+    if (([gdrUtils isFacebookSource:username])) {
+        NSInteger sourceType=ExternalSourceAll;
+        //Facebook or Google
+        if ([gdrUtils isFacebookSource:username])
+        {
+            sourceType = ExternalSourceFacebook;
+        }
+        params = @{@"grant_type":@"password",@"UserName": username,@"ExternalSource":[NSNumber numberWithInteger:sourceType],@"Language":[[gdrUtils sharedUtils] DeviceLanguageCode] != nil ? [[gdrUtils sharedUtils]DeviceLanguageCode] : [NSNumber numberWithInt:[gdrUtils getDeviceLanguageCode]]};
+    }
+    else{
+        params = @{@"grant_type":@"password",@"UserName": username,@"Password":password,@"Language":[[gdrUtils sharedUtils] DeviceLanguageCode] != nil ? [[gdrUtils sharedUtils]DeviceLanguageCode] : [NSNumber numberWithInt:[gdrUtils getDeviceLanguageCode]], @"ClientId":[[AppInstallation current] getUniqueDeviceIdentifierAsString]};
+    }
+    
+    NSMutableDictionary *dict =[NSMutableDictionary dictionaryWithDictionary:params];
+    [dict setObject:[[gdrUtils sharedUtils] userCountry] forKey:@"country"];
+    
+    //Call request
+    [manager POST:path parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+        if (success) {
+            success(task,responseObject);
+        }
+    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+        if (failure) {
+            failure(task,error);
+        }
+    }];
+}
+
+//login
+-(void)refreshTokenWithToken:(NSString*) refreshToken witUserId: (NSString*) userId
+                     success:(void(^)(NSURLSessionDataTask *task, id responseObject))success
+                     failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure
+{
+    if (refreshToken == nil || userId == nil) {
+//        NSLog(@"Unable to refersh token, params are invalid");
+        return;
+    }
+    
+    NSString* path = [gdrURLManager loginURLString];
+    
+    AFHTTPSessionManager *manager = [AFHTTPSessionManager manager];
+    self.requestSerializer = [AFJSONRequestSerializer serializer];
+    self.responseSerializer = [AFJSONResponseSerializer serializer];
+    
+    
+    
+    NSDictionary *params = @{@"grant_type":@"refresh_token",@"refresh_token": refreshToken,@"UserId":userId};
+    //Call request
+    [manager POST:path parameters:params progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+        if (success) {
+            success(task,responseObject);
+        }
+    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+        if (failure) {
+            failure(task,error);
+        }
+    }];
+}
+
+//login
+-(void)refreshEfftiTokenWithToken:(NSString*) refreshToken withUserId: (NSString*) userId
+                          success:(void(^)(NSURLSessionDataTask *task, id responseObject))success
+                          failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure
+{
+    if (refreshToken == nil || userId == nil) {
+        return;
+    }
+    
+    NSString* path = [gdrURLManager getEfftiRefreshToken];
+    
+    AFHTTPSessionManager *manager = [AFHTTPSessionManager manager];
+    self.requestSerializer = [AFJSONRequestSerializer serializer];
+    self.responseSerializer = [AFJSONResponseSerializer serializer];
+    
+    
+    
+    NSDictionary *params = @{@"grant_type":@"refresh_token",@"refresh_token": refreshToken,@"UserId":userId};
+    
+    //Call request
+    [manager POST:path parameters:params progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+        if (success) {
+            success(task,responseObject);
+        }
+    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+        if (failure) {
+            failure(task,error);
+        }
+    }];
+}
+
+/**
+ *  Private - Request message for internalRequestWithDict:::::
+ */
+-(void)privateEfftiRequestMessage:(NSDictionary*)dict isPostMethod:(BOOL)isPost path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    //Request
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    if (useToken==YES) {
+        [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    }
+    
+    if (isJSON==YES) {
+        self.responseSerializer = [AFJSONResponseSerializer serializer];
+    }
+    else
+    {
+        self.responseSerializer = [AFHTTPResponseSerializer serializer];
+    }
+    
+    if (isPost==YES) {
+        [self POST:strPath parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+            if (success) {
+                success(task,responseObject);
+            }
+        } failure:^(NSURLSessionDataTask *task, NSError *error) {
+            if (failure) {
+                [[[gdrUtils sharedUtils] getAppDelegate] checkInternetConnection];
+                NSInteger errorCode = [self handleError:task error:error];
+                if (errorCode == EXPIRED_TOKEN) {
+                    [self refreshTokenWithToken:[gdrUtils sharedUtils].refreshToken witUserId:[[gdrUtils sharedUtils].userId stringValue] success:^(NSURLSessionDataTask *task, id responseObject) {
+                        [[gdrUtils sharedUtils] setToken:responseObject[@"access_token"]];
+                        [[gdrUtils sharedUtils] setRefreshToken:responseObject[@"refresh_token"]];
+                        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+                    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+                        [gdrUtils logoutUser];
+                    }];
+                }
+                if (errorCode == OTHERS_ERROR) {
+                    failure(task, error);
+                }
+            }
+        }];
+    }
+    else
+    {
+        [self GET:strPath parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+            if (success) {
+                success(task,responseObject);
+            }
+        } failure:^(NSURLSessionDataTask *task, NSError *error) {
+            if (failure) {
+                [[[gdrUtils sharedUtils] getAppDelegate] checkInternetConnection];
+                NSInteger errorCode = [self handleError:task error:error];
+                if (errorCode == EXPIRED_TOKEN) {
+                    [self refreshTokenWithToken:[gdrUtils sharedUtils].refreshToken witUserId:[[gdrUtils sharedUtils].userId stringValue] success:^(NSURLSessionDataTask *task, id responseObject) {
+                        [[gdrUtils sharedUtils] setToken:responseObject[@"access_token"]];
+                        [[gdrUtils sharedUtils] setRefreshToken:responseObject[@"refresh_token"]];
+                        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+                    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+                        [gdrUtils logoutUser];
+                    }];
+                }
+                if (errorCode == OTHERS_ERROR) {
+                    failure(task, error);
+                }
+            }
+        }];
+    }
+}
+-(void)privateRequestMessage:(NSDictionary*)dict isPostMethod:(BOOL)isPost path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    //Request
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"%d",VERSION] forHTTPHeaderField:@"Version"];
+    if (useToken==YES) {
+        [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] token]] forHTTPHeaderField:@"Authorization"];
+    }
+    if (isJSON==YES) {
+        self.responseSerializer = [AFJSONResponseSerializer serializer];
+    }
+    else
+    {
+        self.responseSerializer = [AFHTTPResponseSerializer serializer];
+    }
+    
+    if (isPost==YES) {
+        
+        [self POST:strPath parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+            if (success) {
+                success(task,responseObject);
+            }
+        } failure:^(NSURLSessionDataTask *task, NSError *error) {
+            if (failure) {
+                [[[gdrUtils sharedUtils] getAppDelegate] checkInternetConnection];
+                NSInteger errorCode = [self handleError:task error:error];
+                if (errorCode == EXPIRED_TOKEN) {
+                    [self refreshTokenWithToken:[gdrUtils sharedUtils].refreshToken witUserId:[[gdrUtils sharedUtils].userId stringValue] success:^(NSURLSessionDataTask *task, id responseObject) {
+                        [[gdrUtils sharedUtils] setToken:responseObject[@"access_token"]];
+                        [[gdrUtils sharedUtils] setRefreshToken:responseObject[@"refresh_token"]];
+                        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+                    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+                        [gdrUtils logoutUser];
+                    }];
+                }
+                if (errorCode == OTHERS_ERROR) {
+                    failure(task, error);
+                }            }
+        }];
+        
+    }
+    else
+    {
+        [self GET:strPath parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+            if (success) {
+                success(task,responseObject);
+            }
+        } failure:^(NSURLSessionDataTask *task, NSError *error) {
+            if (failure) {
+                [[[gdrUtils sharedUtils] getAppDelegate] checkInternetConnection];
+                NSInteger errorCode = [self handleError:task error:error];
+                if (errorCode == EXPIRED_TOKEN) {
+                    [self refreshTokenWithToken:[gdrUtils sharedUtils].refreshToken witUserId:[[gdrUtils sharedUtils].userId stringValue] success:^(NSURLSessionDataTask *task, id responseObject) {
+                        [[gdrUtils sharedUtils] setToken:responseObject[@"access_token"]];
+                        [[gdrUtils sharedUtils] setRefreshToken:responseObject[@"refresh_token"]];
+                        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+                    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+                        [gdrUtils logoutUser];
+                    }];
+                }
+                if (errorCode == OTHERS_ERROR) {
+                    failure(task, error);
+                }
+            }
+        }];
+    }
+}
+
+// no internet connection - load response from memory cache
+-(void)getMessageFromCache:(NSDictionary*)dict isPostMethod:(BOOL)isPost path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken isCache:(BOOL)iscache successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    //Request
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"%d",VERSION] forHTTPHeaderField:@"Version"];
+    [self.requestSerializer setCachePolicy:NSURLRequestReturnCacheDataElseLoad];
+    
+    if (useToken==YES) {
+        [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] token]] forHTTPHeaderField:@"Authorization"];
+    }
+    if (isJSON==YES) {
+        self.responseSerializer = [AFJSONResponseSerializer serializer];
+    }
+    else
+    {
+        self.responseSerializer = [AFHTTPResponseSerializer serializer];
+    }
+    
+    if (isPost==YES) {
+    }
+    else
+    {
+        [self GET:strPath parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+            if (success) {
+                success(task,responseObject);
+            }
+        } failure:^(NSURLSessionDataTask *task, NSError *error) {
+            NSCachedURLResponse *cachedResponse = [[NSURLCache sharedURLCache] cachedResponseForRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:strPath]]];
+            success(task,cachedResponse);
+        }];
+    }
+}
+
+// internet is available, load data from api
+-(void)privateRequestMessage:(NSDictionary*)dict isPostMethod:(BOOL)isPost path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken isCache:(BOOL)iscache successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    //Request
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"%d",VERSION] forHTTPHeaderField:@"Version"];
+    
+    if (!iscache) {
+        [self.requestSerializer setCachePolicy:NSURLRequestReloadIgnoringLocalCacheData];
+    }
+    if (useToken==YES) {
+        [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] token]] forHTTPHeaderField:@"Authorization"];
+    }
+    if (isJSON==YES) {
+        self.responseSerializer = [AFJSONResponseSerializer serializer];
+    }
+    else
+    {
+        self.responseSerializer = [AFHTTPResponseSerializer serializer];
+    }
+    if (isPost==YES) {
+        [self POST:strPath parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+            if (success) {
+                success(task,responseObject);
+            }
+        } failure:^(NSURLSessionDataTask *task, NSError *error) {
+            if (failure) {
+                [[[gdrUtils sharedUtils] getAppDelegate] checkInternetConnection];
+                NSInteger errorCode = [self handleError:task error:error];
+                if (errorCode == EXPIRED_TOKEN) {
+                    [self refreshTokenWithToken:[gdrUtils sharedUtils].refreshToken witUserId:[[gdrUtils sharedUtils].userId stringValue] success:^(NSURLSessionDataTask *task, id responseObject) {
+                        [[gdrUtils sharedUtils] setToken:responseObject[@"access_token"]];
+                        [[gdrUtils sharedUtils] setRefreshToken:responseObject[@"refresh_token"]];
+                        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+                    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+                        [gdrUtils logoutUser];
+                    }];
+                }
+                if (errorCode == OTHERS_ERROR) {
+                    failure(task, error);
+                }
+            }
+        }];
+    }
+    else
+    {
+        [self GET:strPath parameters:dict progress:nil success:^(NSURLSessionDataTask *task, id responseObject) {
+            if (success) {
+                success(task,responseObject);
+            }
+        } failure:^(NSURLSessionDataTask *task, NSError *error) {
+            if (failure) {
+                [[[gdrUtils sharedUtils] getAppDelegate] checkInternetConnection];
+                NSInteger errorCode = [self handleError:task error:error];
+                if (errorCode == EXPIRED_TOKEN) {
+                    [self refreshTokenWithToken:[gdrUtils sharedUtils].refreshToken witUserId:[[gdrUtils sharedUtils].userId stringValue] success:^(NSURLSessionDataTask *task, id responseObject) {
+                        [[gdrUtils sharedUtils] setToken:responseObject[@"access_token"]];
+                        [[gdrUtils sharedUtils] setRefreshToken:responseObject[@"refresh_token"]];
+                        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+                    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+                        [gdrUtils logoutUser];
+                    }];
+                }
+                if (errorCode == OTHERS_ERROR) {
+                    failure(task, error);
+                }
+            }
+        }];
+    }
+}
+
+-(NSURLSessionDataTask*) privateRequest:(NSDictionary*)dict method:(int) method path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken isCache:(BOOL)iscache successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    //Request
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"%d",VERSION] forHTTPHeaderField:@"Version"];
+    
+    if (!iscache) {
+        [self.requestSerializer setCachePolicy:NSURLRequestReloadIgnoringLocalCacheData];
+    }
+    if (useToken==YES) {
+        [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] token]] forHTTPHeaderField:@"Authorization"];
+    }
+    if (isJSON==YES) {
+        self.responseSerializer = [AFJSONResponseSerializer serializer];
+    }
+    else
+    {
+        self.responseSerializer = [AFHTTPResponseSerializer serializer];
+    }
+    void (^successBlock)(NSURLSessionDataTask *task, id responseObject);
+    successBlock = ^(NSURLSessionDataTask *task, id responseObject){
+        if (success) {
+            success(task,responseObject);
+        }
+    };
+    void (^failBlock)(NSURLSessionDataTask *task, NSError *error);
+    failBlock = ^(NSURLSessionDataTask *task, NSError *error){
+        if (failure) {
+            [[[gdrUtils sharedUtils] getAppDelegate] checkInternetConnection];
+            NSInteger errorCode = [self handleError:task error:error];
+            if (errorCode == EXPIRED_TOKEN) {
+                [self refreshTokenWithToken:[gdrUtils sharedUtils].refreshToken witUserId:[[gdrUtils sharedUtils].userId stringValue] success:^(NSURLSessionDataTask *task, id responseObject) {
+                    [[gdrUtils sharedUtils] setToken:responseObject[@"access_token"]];
+                    [[gdrUtils sharedUtils] setRefreshToken:responseObject[@"refresh_token"]];
+                    [self privateRequest:dict method:method path:strPath isJSONResponse:isJSON useToken:useToken isCache:iscache successBlock:success failure:failure];
+                } failure:^(NSURLSessionDataTask *task, NSError *error) {
+                    [gdrUtils logoutUser];
+                }];
+            }
+            if (errorCode == OTHERS_ERROR) {
+                failure(task, error);
+            }
+        }
+    };
+    switch (method) {
+        case REST_GET://GET
+            return [self GET:strPath parameters:dict progress:nil success: successBlock failure: failBlock];
+        case REST_POST://POST
+            return [self POST:strPath parameters:dict progress:nil success: successBlock failure: failBlock];
+        case REST_PUT://PUT
+            return [self PUT:strPath parameters:dict success:successBlock failure:failBlock];
+        case REST_PATCH://PATCH
+            return [self PATCH:strPath parameters:dict success:successBlock failure:failBlock];
+        case REST_DELETE://DELETE
+            return [self DELETE:strPath parameters:dict success:successBlock failure:failBlock];
+            break;
+        default:
+            return nil;
+    }
+}
+
+#pragma mark - Handle Error
+-(NSInteger)handleError:(NSURLSessionDataTask *)task error:(NSError *)error{
+    NSHTTPURLResponse* respone = (NSHTTPURLResponse*)task.response;
+    if (error.code == NSURLErrorTimedOut) {
+//        [PopupUtil showWithTitle:@"GlobeDr" message:NSLocalizedString(@"requestTimeoutError", nil) inView:[[gdrUtils sharedUtils] getAppDelegate].window.rootViewController];
+        UIView *topView = [[gdrUtils sharedUtils] getAppDelegate].window.rootViewController.view;
+        [topView makeToast:NSLocalizedString(@"requestTimeoutError", nil)];
+    }
+    if (respone.statusCode == SERVER_FAILED) {
+        [PopupUtil showWithTitle:@"GlobeDr" message:NSLocalizedString(@"serverErrorCode500", nil) inView:[[gdrUtils sharedUtils] getAppDelegate].window.rootViewController];
+    }
+    if (respone.statusCode == EXPIRED_TOKEN) {
+        return EXPIRED_TOKEN;
+    }else{
+        return OTHERS_ERROR;
+    }
+    return 0; // handled error completely
+}
+
+#pragma mark - NSURLConnection Delegate
+
+-(void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response{
+    _responseData = [[NSMutableData alloc] init];
+}
+
+-(void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data{
+    [_responseData appendData:data];
+}
+
+-(NSCachedURLResponse *)connection:(NSURLConnection *)connection willCacheResponse:(NSCachedURLResponse *)cachedResponse{
+// return nil to indicate not necessary to store a cached response for this connection
+    return nil;
+}
+
+-(void)connectionDidFinishLoading:(NSURLConnection *)connection{
+// the request is complete and data has been received, parse the stuff here
+}
+-(void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error{
+    // the request has failed for some reason, check error
+}
+/* ============================================== */
+
+
+-(void)internalEfftiRequestWithDict:(NSDictionary *)dict isPostMethod:(BOOL)isPost path:(NSString *)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken successBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    if ([strPath containsString:@"http"] == NO)
+    {
+        return;
+    }
+    if ([[gdrUtils sharedUtils] canReachInternet]==NO) {
+        //CHECK AGAIN
+        Reachability *reachability = [Reachability reachabilityWithHostname:@"www.google.com"];
+        
+        if ([reachability isReachable]) {
+            // we do have reachability so let's wait for a set delay before trying again
+            [[gdrUtils sharedUtils] setCanReachInternet:YES];
+            
+            [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+        }
+        else {
+            //Stop profressing in some tableView
+            if ([[gdrUtils sharedUtils] getAppDelegate].refreshControl!=nil) {
+                [[[gdrUtils sharedUtils] getAppDelegate].refreshControl endRefreshing];
+            }
+            if ([[gdrUtils sharedUtils] getAppDelegate].infiniteScrollingView!=nil) {
+                [[[gdrUtils sharedUtils] getAppDelegate].infiniteScrollingView stopAnimating];
+            }
+            
+            [[gdrUtils sharedUtils] setCanReachInternet:NO];
+            {
+                UIAlertController *noInterNetAlert = [UIAlertController alertControllerWithTitle:@"Globedr" message:NSLocalizedString(@"noInternetConnection", nil) preferredStyle:UIAlertControllerStyleAlert];
+                UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"ok", nil) style:UIAlertActionStyleDefault handler:nil];
+                [noInterNetAlert addAction:cancelAction];
+                [[[gdrUtils sharedUtils] getAppDelegate].window.rootViewController presentViewController:noInterNetAlert animated:YES completion:nil];
+            }
+        }
+    }
+    else
+    {
+        [self privateEfftiRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+    }
+    
+}
+-(void)internalRequestWithDict:(NSDictionary*)dict isPostMethod:(BOOL)isPost path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    if ([strPath containsString:@"http"] == NO)
+    {
+        return;
+    }
+    if ([[gdrUtils sharedUtils] canReachInternet]==NO) {
+        //CHECK AGAIN
+        Reachability *reachability = [Reachability reachabilityWithHostname:@"www.google.com"];
+        
+        if ([reachability isReachable]) {
+            // we do have reachability so let's wait for a set delay before trying again
+            [[gdrUtils sharedUtils] setCanReachInternet:YES];
+            
+            [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+        }
+        else {
+            //Stop profressing in some tableView
+            if ([[gdrUtils sharedUtils] getAppDelegate].refreshControl!=nil) {
+                [[[gdrUtils sharedUtils] getAppDelegate].refreshControl endRefreshing];
+            }
+            if ([[gdrUtils sharedUtils] getAppDelegate].infiniteScrollingView!=nil) {
+                [[[gdrUtils sharedUtils] getAppDelegate].infiniteScrollingView stopAnimating];
+            }
+
+            [[gdrUtils sharedUtils] setCanReachInternet:NO];
+
+            UIAlertController *noInterNetAlert = [UIAlertController alertControllerWithTitle:@"Globedr" message:NSLocalizedString(@"noInternetConnection", nil) preferredStyle:UIAlertControllerStyleAlert];
+           
+            UIAlertAction *cancelAction = [UIAlertAction actionWithTitle:NSLocalizedString(@"ok", nil) style:UIAlertActionStyleDefault handler:nil];
+            [noInterNetAlert addAction:cancelAction];
+            
+            [[[gdrUtils sharedUtils] getAppDelegate].window.rootViewController presentViewController:noInterNetAlert animated:YES completion:nil];
+        }
+    }
+    else
+    {
+        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+    }
+}
+//background request without any UI interception
+-(void)internalRequestInBackgroundWithDict:(NSDictionary*)dict isPostMethod:(BOOL)isPost path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    if ([strPath containsString:@"http"] == NO)
+    {
+        return;
+    }
+    if ([[gdrUtils sharedUtils] canReachInternet]==NO) {
+        //CHECK AGAIN
+        Reachability *reachability = [Reachability reachabilityWithHostname:@"www.google.com"];
+        
+        if ([reachability isReachable]) {
+            // we do have reachability so let's wait for a set delay before trying again
+            [[gdrUtils sharedUtils] setCanReachInternet:YES];
+            
+            [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+        }
+        else {
+            //Stop profressing in some tableView
+            if ([[gdrUtils sharedUtils] getAppDelegate].refreshControl!=nil) {
+                [[[gdrUtils sharedUtils] getAppDelegate].refreshControl endRefreshing];
+            }
+            if ([[gdrUtils sharedUtils] getAppDelegate].infiniteScrollingView!=nil) {
+                [[[gdrUtils sharedUtils] getAppDelegate].infiniteScrollingView stopAnimating];
+            }
+            
+            
+            
+            [[gdrUtils sharedUtils] setCanReachInternet:NO];
+
+        }
+    }
+    else
+    {
+        [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken successBlock:success failure:failure];
+    }
+}
+
+
+//load data from api, if fail, using memory cache
+-(void)internalRequestWithDict:(NSDictionary*)dict isPostMethod:(BOOL)isPost path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken isCache:(BOOL)iscache successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    if ([strPath containsString:@"http"] == NO)
+    {
+        return;
+    }
+    NSLog(@"%@",[NSNumber numberWithBool:[[gdrUtils sharedUtils] canReachInternet]]);
+        //CHECK AGAIN
+        Reachability *reachability = [Reachability reachabilityWithHostname:@"www.google.com"];
+        
+        if ([reachability isReachable]) {
+            // we do have reachability so let's wait for a set delay before trying again
+            [[gdrUtils sharedUtils] setCanReachInternet:YES];
+            // request api
+            [self privateRequestMessage:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken isCache:(BOOL)iscache successBlock:success failure:failure];
+        }else{
+            // no internet connection
+            [self getMessageFromCache:dict isPostMethod:isPost path:strPath isJSONResponse:isJSON useToken:useToken isCache:(BOOL)iscache successBlock:success failure:failure];
+        }
+}
+
+-(NSURLSessionDataTask*)internalRequest:(NSDictionary*)dict method:(int)method path:(NSString*)strPath isJSONResponse:(BOOL)isJSON useToken:(BOOL)useToken isCache:(BOOL)iscache successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    if ([strPath containsString:@"http"] == NO)
+    {
+        return nil;
+    }
+    NSLog(@"%@",[NSNumber numberWithBool:[[gdrUtils sharedUtils] canReachInternet]]);
+    //CHECK AGAIN
+    Reachability *reachability = [Reachability reachabilityWithHostname:@"www.google.com"];
+    
+    if ([reachability isReachable]) {
+        // we do have reachability so let's wait for a set delay before trying again
+        [[gdrUtils sharedUtils] setCanReachInternet:YES];
+        // request api
+        return [self privateRequest:dict method:method path:strPath isJSONResponse:isJSON useToken:useToken isCache:iscache successBlock:success failure:failure];
+    }else{
+        // no internet connection
+        NSCachedURLResponse *cachedResponse = [[NSURLCache sharedURLCache] cachedResponseForRequest:[NSURLRequest requestWithURL:[NSURL URLWithString:strPath]]];
+        success(nil,cachedResponse);
+        return nil;
+    }
+}
+
+-(void)getEfftiToken:(NSString *)accessToken success:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSDictionary *dict = @{@"AccessToken":accessToken};
+    
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getEfftiToken] isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+    
+}
+-(void)getUserProfile:(NSDictionary *)dictionary successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSString* path = [gdrURLManager userProfileURLString];
+    [self internalRequestWithDict:dictionary isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)getCountryListWithSuccessBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:nil isPostMethod:NO path:[gdrURLManager getGetCountryListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getSpecialtiesList: (NSDictionary *)dictionary successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    
+    [self internalRequestWithDict: dictionary isPostMethod:NO path:[gdrURLManager getGetSpecialtiesListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getPostListWithPageNo:(BOOL)isAskGlobeDr pageNo:(NSInteger)pageNo pageSize:(NSInteger)pageSize successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSLog(@"isAskGlobeDr: %@",[NSNumber numberWithBool:isAskGlobeDr]);
+    NSDictionary *params = @{@"IsAskGlobeDr":[NSString stringWithFormat:@"%@",isAskGlobeDr ? @"True" : @"False"],
+                             @"PageNo":[NSNumber numberWithInteger:pageNo],
+                             @"PageSz":[NSNumber numberWithInteger:pageSize]
+                            };
+        [self internalRequestWithDict:params isPostMethod:NO path:[gdrURLManager getPostListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getImageWithURL:(mPost*)aPost successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:nil isPostMethod:YES path:nil isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)likePost:(mPost*)aPost successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSDictionary *params = @{@"msgId":[NSNumber numberWithInteger:aPost.msgId],@"isLike":[gdrUtils trueValueForRequest:!aPost.isLike]};
+    
+    [self internalRequestWithDict:params isPostMethod:YES path:[gdrURLManager getLikeURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getUserListWithSearchString:(NSString*)searchString successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSDictionary *params = @{@"PageNo":[NSNumber numberWithInteger:1],@"SearchName":searchString};
+    
+    [self internalRequestWithDict:params isPostMethod:YES path:[gdrURLManager getUserListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getUserAccessList:(NSString*)searchString successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSDictionary *params = @{@"PageNo":[NSNumber numberWithInteger:1],@"SearchName":searchString};
+    
+    [self internalRequestWithDict:params isPostMethod:YES path:[gdrURLManager getUserAccessList] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+
+-(void)getMessageListOfPost:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getMessageListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)addComment:(mPost*)postObj successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    
+    NSMutableDictionary *dict = [NSMutableDictionary new];
+    [dict setObject:postObj.postSignature forKey:@"authSignature"];
+    [dict setObject:[NSNumber numberWithInteger:postObj.postId] forKey:@"postId"];
+    if (postObj.msgId>0) {
+        [dict setObject:[NSNumber numberWithInteger:postObj.msgId] forKey:@"msgId"];
+    }
+    [dict setObject:postObj.msg forKey:@"msg"];
+    [dict setObject:[NSNumber numberWithInteger:postObj.createById] forKey:@"createById"];
+    [dict setObject:(postObj.isVisible==YES)?@"true":@"false" forKey:@"isVisible"];
+    [dict setObject:postObj.postSignature forKey:@"AuthSignature"];
+    
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getAddCommentURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)updatePostAccess:(mPost*)postObj successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSMutableDictionary *params = [NSMutableDictionary new];
+    
+    [params setObject:[NSNumber numberWithInteger:postObj.postId] forKey:@"PostId"];
+    [params setObject:postObj.postSignature forKey:@"Auth"];
+    
+    NSMutableArray *userAndGroup = [NSMutableArray new];
+    for (mUserGroup* group in postObj.userAndGroup) {
+        NSDictionary *groupDict = @{@"Id":[NSNumber numberWithInteger:group.idGroup],@"isGroup":[gdrUtils trueValueForRequest:group.isGroup],@"name":group.name,@"groupType":[NSNumber numberWithInteger:group.groupType]};
+        [userAndGroup addObject:groupDict];
+    }
+    if (userAndGroup.count>0) {
+        [params setObject:userAndGroup forKey:@"userAndGroup"];
+    }
+    [self internalRequestWithDict:params isPostMethod:YES path:[gdrURLManager getUpdatePostAccessURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getDefaultUserWithSuccessBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:nil isPostMethod:NO path:[gdrURLManager getDefaultUserURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)acceptOrDeclineAnswerPost:(BOOL)isAccepted post:(mPost*)postObj successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSString* path;
+    if (isAccepted==YES) {
+        path = [gdrURLManager getAcceptAnswerPostURLString];
+    }else{
+        path = [gdrURLManager getDeclineAnswerPostURLString];
+    }
+    
+    NSDictionary *dict = @{@"PostId":[NSNumber numberWithInteger:postObj.postId],@"Auth":postObj.postSignature,@"CreateById":[NSNumber numberWithInteger: postObj.createById]};
+    
+    [self internalRequestWithDict:dict isPostMethod:YES path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)searchProviderWithInfo:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getSearchProviderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadProvider:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    
+    self.responseSerializer = [AFJSONResponseSerializer serializerWithReadingOptions:NSJSONReadingAllowFragments];
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadProviderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getUnreadNotiWithSuccessBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestInBackgroundWithDict:nil isPostMethod:YES path:[gdrURLManager getUnreadNotiURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getChatNotiWithSuccessBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSDictionary *dict = @{@"language":[NSNumber numberWithInteger:[[[gdrUtils sharedUtils] DeviceLanguageCode] integerValue]]};
+    [self internalRequestInBackgroundWithDict:dict isPostMethod:NO path:[gdrURLManager getChatNotiURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)removeUploadedImageWithDocId:(NSInteger)docId successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSDictionary *dict = @{@"docId":[NSNumber numberWithInteger:docId],@"auth":@"OK"};
+    
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getRemoveUploadedImageURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+//-(void)registerWithInfo:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+//    NSString* path = [gdrURLManager registerURLString];
+//
+//    AFHTTPSessionManager *manager = [AFHTTPSessionManager manager];
+//    self.requestSerializer = [AFJSONRequestSerializer serializer];
+//    self.responseSerializer = [AFJSONResponseSerializer serializer];
+//
+//    NSMutableDictionary *mDict = [NSMutableDictionary dictionaryWithDictionary:dict];
+//    [mDict setObject:[NSNumber numberWithInt:[gdrUtils getDeviceLanguageCode]] forKey:@"lang"];
+//
+//    [manager POST:path parameters:mDict success:^(NSURLSessionDataTask *task, id responseObject) {
+//        if (success) {
+//            success(task,responseObject);
+//        }
+//    } failure:^(NSURLSessionDataTask *task, NSError *error) {
+//        if (failure) {
+//            failure(task,error);
+//        }
+//    }];
+//}
+-(void)signupWithInfo:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSString* path = [gdrURLManager signupURLString];
+    NSMutableDictionary *mDict = [NSMutableDictionary dictionaryWithDictionary:dict];
+    [mDict setObject:[NSNumber numberWithInt:[gdrUtils getDeviceLanguageCode]] forKey:@"lang"];
+    [self internalRequestWithDict:mDict isPostMethod:YES path:path isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+    
+}
+-(void)confirmSignUp:(NSDictionary *)dict successBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager confirmSignUpURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)resendSignUpConfirm:(NSDictionary *)dict successBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager resendSignUpConfirmURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+- (void)requestAcceptInvitation:(NSDictionary *)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getAcceptInvitationPath] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+//
+-(void)getAddressWithLongLat:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getAddressURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)updatePersonalWith:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUpdatePersonalURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)changeEmailOrPhone:(NSDictionary *)dict success:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager changeEmailOrPhoneURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)userUpdateProfile:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+//    NSLog(@"%@",[gdrURLManager getUserUpdateProfileURLString]);
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUserUpdateProfileURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)userChangePwd:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUserChangePwdURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)userChangeCover:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUserChangeCoverURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)userChangeAvatar:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUserChangeAvatarURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)externalLoginWithInfo:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getExternalLoginURLString] isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+}
+-(void)checkAddress:(NSString*)address  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSDictionary *dict = @{@"address":address};
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getCheckAddressInvalidURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getAddPost:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getAddPostURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getCountryListWithSuccess:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSString *url;
+    if ([[gdrUtils sharedUtils] DeviceLanguageCode] != nil) {
+        url = [NSString stringWithFormat:@"%@%@",[gdrURLManager getCountryListURLString],[[gdrUtils sharedUtils] DeviceLanguageCode]];
+    }else{
+        url = [NSString stringWithFormat:@"%@%@",[gdrURLManager getCountryListURLString],[[gdrUtils sharedUtils] DeviceLanguageCode]];
+    }
+    
+    
+    [self internalRequestWithDict:nil isPostMethod:NO path:url isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+}
+-(void)loadOrgView:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadOrgViewURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getSpecialtyForOrg:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getSpecialtyForOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getLocationForOrg:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLocationForOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)getDoctorForSpec:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getDoctorForSpecURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getListProviderOfOrg:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getListProviderOfOrg] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)sendContactToOrgURLString:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getSendContactToOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)checkAccountExisted:(NSDictionary *)dict success:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager checkAccountExistedURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)getChannelListWithSuccessBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:nil isPostMethod:NO path:[gdrURLManager getChannelListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadNotificationPage:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadNotificationPageURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)passwordRecovery:(NSDictionary *)dict successBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager passwordRecoveryURLString] isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+}
+-(void)getHostInfoWithSuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    NSString *path = [NSString stringWithFormat:@"%@%@%@%@%@", [gdrURLManager getHostInfoURLString], @"?appVersion=", [[NSBundle mainBundle] objectForInfoDictionaryKey: @"CFBundleShortVersionString"],@"&lang=",[[gdrUtils sharedUtils] DeviceLanguageCode]];
+
+    [self internalRequestWithDict:nil isPostMethod:NO path:path isJSONResponse:YES useToken:NO isCache:YES successBlock:success failure:failure];
+}
+
+-(void)registerDevice:(NSDictionary*)dict SuccessBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager registerDeviceURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)deleteDevice:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager deleteDeviceURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)checkVersion:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getCheckVersionURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)changeLanguage:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getChangeLanguageURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)updatePusherChannel:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUpdatePusherChannelPath] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ *  Pharmacy
+ */
+-(void)searchSeoPharmacy:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager searchSeoPharmacy] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)orderPharmacy:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager orderPharmacy] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)orderHistory:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager orderHistory] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)SearchMemberedPharmacy:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager SearchMemberedPharmacy] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)CancelOrder:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager CancelOrder] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)SearchPharmacyById:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager SearchPharmacyById] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)PatientLoadPrescriptionById:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager PatientLoadPrescriptionById] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ *  Appt
+ */
+-(void)GetDepartmentList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager getDepartmentList];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalRequestWithDict:dict isPostMethod:YES path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+    
+}
+-(void)LoadServicesByApiKeyDeptIds:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager LoadServicesByApiKeyDeptIds];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:YES path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetTicketDetail:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager getTicketDetail];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetListSlot:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager getListSlot];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)CreateAppointmentByMobile:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager createAppointmentByMobile];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:YES path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)FirstSlot:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager firstSlot];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)CancelTicket:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager cancelTicket];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:YES path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LoadListActiveTicket:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager loadListActiveTicket];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LoadListOtherTicket:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager loadListOtherTicket];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+
+}
+-(void)CreateTicket:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager createTicket];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:YES path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+
+}
+-(void)GetServedTimeByServiceId:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager getServedTimeByServiceId];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetListDepartment:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString* path =[gdrURLManager GetListDepartmentURLString];
+    
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Accept"];
+    [self.requestSerializer setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    [self.requestSerializer setValue:[NSString stringWithFormat:@"Bearer %@",[[gdrUtils sharedUtils] EfftiToken]] forHTTPHeaderField:@"Authorization"];
+    [self internalEfftiRequestWithDict:dict isPostMethod:YES path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)LoadProviderList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager loadProviderListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetInfoToRequestAppt:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetInfoToRequestApptURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+    
+}
+-(void)RequestApptToProvider:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager RequestApptToProviderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetAppointmentList:(NSDictionary*)dict apptType:(ApptRequestType)apptRequestType SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    
+    if (apptRequestType==ApptRequestTypeAppointment) {
+        [self GetApptForProvider:dict SuccessBlock:success failure:failure];
+    }
+    else if (apptRequestType==ApptRequestTypeMyAppt) {
+        [self GetApptListForPatient:dict SuccessBlock:success failure:failure];
+    }
+}
+-(void)GetApptListForPatient:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetApptListForPatientURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetApptForProvider:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetApptForProviderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LoadApptForPatient:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadApptForPatientURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LoadApptForProvider:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadApptForProviderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)ChangeApptByPatient:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager ChangeApptByPatientURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)ChangeApptByProvider:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager ChangeApptByProviderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)CancelApptByPatient:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager CancelApptByPatientURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)CancelByProvider:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager CancelByProviderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)ConfirmAppt:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager ConfirmApptURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)DeclineAppt:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager DeclineApptURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)allowToMyHealth:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager allowToMyHealthURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)allowViewMyHealthByUserId:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager allowViewMyHealthByUserIdURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)medHistAccessRequest:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager medHistAccessRequestURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)sendMsg:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager sendMsgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)sendMessage:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager sendMessageURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadMedHistAccessRequest:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager loadMedHistAccessRequestURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadSpecialtyForOrg:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadSpecialtyForOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getDoctorVerifiedForSpecialty:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetDoctorVerifiedForSpecialtyURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)assignAppt:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager assignApptURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)denyAppt:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager denyApptURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)updateNote:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager updateNoteURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getUserOrganization:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUserOrganizationURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)isOrgAdmin:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager isOrgAdminURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getQtyNewAppt:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getQtyNewApptURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+//articles
+-(void)getUserEduBookList:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUserEduBookListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)likeBook:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager likeBookURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+//-(void)getBookWithMsgs:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+//    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getBookWithMsgsURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+//}
+-(void)getAttachment:(NSString*)viewDocURL SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:nil isPostMethod:NO path:viewDocURL isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getBookDetail:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getBookDetail] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getArticleCommentList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getArticleCommentList] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+//Feed
+-(void)getCommentList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getCommentList] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetCommentById:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetCommentByIdURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetPostById:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetPostByIdURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)AddNewComment:(NSDictionary*)param successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:param isPostMethod:YES path:[gdrURLManager AddNewCommentURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)addPhoto:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager addPhotoURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)AddAudioChunk:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager AddAudioChunkURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetRandomHotNews:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetRandomHotNewsURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+/**
+ *  Messages
+ */
+-(void)loadMsgFolder:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+//    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager LoadMsgFolderURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager LoadMsgFolderURLString] isJSONResponse:YES useToken:YES isCache:YES successBlock:success failure:failure];
+}
+
+-(void)performMsgAction:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager PerformMsgActionURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)quickSearchUser:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager QuickSearchUserURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadConversation:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadConversationURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetMessageById:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager gdrGetMessageByIdURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetNewMessage:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager gdrGetNewMessageURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)AddMsgDoc:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager AddMsgDocURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+/** methods of new message, support cache response 
+ */
+
+-(void)loadMsgFolder:(NSDictionary*)dict isCache:(BOOL)iscache SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadMsgFolderURLString] isJSONResponse:YES useToken:YES isCache:iscache successBlock:success failure:failure];
+}
+
+-(void)performMsgAction:(NSDictionary*)dict isCache:(BOOL)iscache SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager PerformMsgActionURLString] isJSONResponse:YES useToken:YES isCache:iscache successBlock:success failure:failure];
+}
+
+-(void)loadConversation:(NSDictionary*)dict isCache:(BOOL)iscache SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadConversationURLString] isJSONResponse:YES useToken:YES isCache:iscache successBlock:success failure:failure];
+}
+-(void)GetMessageById:(NSDictionary*)dict isCache:(BOOL)iscache SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager gdrGetMessageByIdURLString] isJSONResponse:YES useToken:YES isCache:iscache successBlock:success failure:failure];
+}
+-(void)GetNewMessage:(NSDictionary*)dict isCache:(BOOL)iscache SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager gdrGetNewMessageURLString] isJSONResponse:YES useToken:YES isCache:iscache successBlock:success failure:failure];
+}
+
+/**
+ *  Connection
+ */
+-(void)loadMyConnection:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    //NSLog(@"loadMyConnection %@", [gdrURLManager LoadMyConnectionURLString]);
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadMyConnectionURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LoadReceivedRequest:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LoadReceivedRequestURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)SearchConnection:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager SearchConnectionURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)SendRequestConnection:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager SendRequestConnectionURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)RemoveConnection:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager RemoveConnectionURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)AcceptConnectionRequest:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager AcceptConnectionRequestURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)ViewProfile:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager ViewProfileURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetContactList:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getContactListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getUserContactList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getContactListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)sendInviteOthers:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager sendInviteOthersURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetUserActions:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetUserActions] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+/**
+ * My Health
+ */
+
+-(void)loadHealthData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getHealthDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)getMyHealthLastDate:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLastMyHealthDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)UpdateBloodPressure:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager updateBloodPressureURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)updateWeighHeight:(NSDictionary*)dict successBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager updateWeighHeightURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)UpdateGlucose:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager updateGlucoseURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+
+-(void)loadBMIChart:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager loadBMIChartURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+
+
+-(void)getHistoryHealth:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getHistoryHealthDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)saveHistoryHealth:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager saveHistoryHealthDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)getDefaultBMIUnit:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getDefaultBMIUnitURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)changeMeasure:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getChangeMeasureURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadWeightHeightData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadWeightHeightDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadImmunizationSchedule:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+//    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getLoadImmunizationScheduleDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getLoadImmunizationScheduleDataURLString] isJSONResponse:YES useToken:YES isCache:YES successBlock:success failure:failure];
+}
+
+-(void)UpdateImmunization:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUpdateImmunizationDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)DeleteRecDateImmunization:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getDeleteRecDateImmunizationDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)removeHealthData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getRemoveHealthDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadBloodPressureData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadBloodPressureDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadGlucoseData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadGlucoseDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void) uploadPrescriptionData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUploadPrescriptionDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void) loadPrescriptionData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadPrescriptionsURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void) uploadVisitNoteData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUploadVisitNoteDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void) loadVisitNoteData:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadVisitNoteDataURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void) removeUserMedicalDoc:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getRemoveUserMedicalDocURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void) updateUserMedicalDoc:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getUpdateUserMedicalDocURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadBloodPressureChart:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadBloodPressureChartURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadCholesterolGlucoseChart:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadCholesterolGlucoseChartURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadSubAccountList:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+//    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getLoadSubAccountListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getLoadSubAccountListURLString] isJSONResponse:YES useToken:YES isCache:YES successBlock:success failure:failure];
+}
+
+-(void)loadCarerTypeList:(NSDictionary*)dict SuccessBlock:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getLoadCarerTypeListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)createOrEditSubAccount:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager createOrEditSubAccountURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void) removeSubAccount:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager removeSubAccountURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)loadAvatarMainUser:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager loginUserLoadAvatarFromUrlURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadConnectionForShare:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager loadConnectionForShare] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadSharedManager:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+//    NSLog(@"%@",[gdrURLManager loadSharedManager]);
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager loadSharedManager] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)shareManagement:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager shareManagement] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)revokeManagement:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager revokeManagement] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)LoadSubAccountById:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager gdrLoadSubAccountByIdURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)loadGrowthChart:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager loadGrowthChart] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ * Forum
+ */
+-(void)getForumPostList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getForumPostListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)getPostsUserCreated:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getPostsUserCreatedURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)getContactListForum:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getContactList] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+
+-(void)GetCategoryList:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetCategoryListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetCategoryListUserCanCreate:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetCategoryListUserCanCreateURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+- (void)GetTagSearchForum:(NSString*)categoryId withKeyWord:(NSString *)keyWord SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    NSString * path = [NSString stringWithFormat:@"%@?categoryId=%@&keyword=%@",[gdrURLManager GetTagSearchForum],categoryId,keyWord];
+    [self internalRequestWithDict:nil isPostMethod:NO path:path isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetCategoryListWithPost:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetCategoryListWithPostURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetInterestCategory:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetInterestCategoryURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)InterestCategory:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager InterestCategoryURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetLanguageList:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetLanguageListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetPostsUserBookmark:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetPostsUserBookmarkURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)AddNewThread:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager AddNewThreadURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+
+}
+-(void)GetPostsByCategory:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetPostsByCategoryURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetPostsByCriteria:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetPostsByCriteriaURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+
+}
+-(void)AddForumComment:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager AddForumCommentURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LikeComment:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LikeCommentURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)BookmarkPost:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager BookmarkPostURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)AddEduDoc:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager AddEduDocURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)AddEduBookIcon:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager AddEduBookIconURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetPostDetail:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager getPostDetailURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ * Coupon
+ */
+-(void)GetRecommendedCoupon:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetRecommendedCouponURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetCouponUserBookmark:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetCouponUserBookmarkURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetDetailCoupon:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetDetailCouponURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)BookmarkCoupon:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager BookmarkCouponURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)OrderByCoupon:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager OrderByCouponURlString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetCouponType:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetCouponTypeURlString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetAllSpecialties:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetAllSpecialties] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetCouponByCriteria:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetCouponByCriteria] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetAllLocations:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+     [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetAllLocations] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetPromoCodeInfo:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+     [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetPromoCodeInfo] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LoadOrderList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager LoadOrderListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LoadOrderById:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager LoadOrderByIdURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetLocationInfo:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetLocationInfoURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)userUpdateMobilePhone:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager UserUpdateMobilePhone] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ * Invite friend
+ */
+-(void)LoadOrgList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager LoadOrgListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)SendInviteWithOrg:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager SendInviteWithOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ * Welcome article
+ */
+-(void)WelcomeArticle:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+     [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager WelcomeArticleURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ * Password recovery
+ */
+-(void)SendPwRecoveryCode:(NSDictionary *)dict success:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager SendPwRecoveryCode] isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+}
+
+-(void)RecoveryPwByConfirmCode:(NSDictionary *)dict success:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager RecoveryPwByConfirmCode] isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+}
+
+-(void)CheckConfirmCodeValid:(NSDictionary *)dict success:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager CheckConfirmCodeValid] isJSONResponse:YES useToken:NO successBlock:success failure:failure];
+    }
+
+-(void)CheckFeatureAllowed:(NSDictionary*)dict  success:(void(^)(NSURLSessionDataTask *task, id responseObject))success failure:(void(^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager CheckFeatureAllowedURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+/**
+ * Organization New API
+ */
+-(void)GetOrgProductList:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetOrgProductListURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)JoinOrg:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager JoinOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)LeaveOrg:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager LeaveOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+
+-(void)GetOrgCouponByOrg:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetOrgCouponByOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetOrgProductByOrg:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetOrgProductByOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetOrgServiceByOrg:(NSDictionary*)dict SuccessBlock:(void (^)(NSURLSessionDataTask *task, id responseObject))success failure:(void (^)(NSURLSessionDataTask *task, NSError *error))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager GetOrgServiceByOrgURLString] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+}
+-(void)GetOrgProductById:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:YES path:[gdrURLManager GetOrgProductById] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+
+}
+-(void)getRandomAdvert:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getRandomAdvert] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+    
+}
+
+-(void)getAdvertList:(NSDictionary *)dict SuccessBlock:(void (^)(NSURLSessionDataTask *, id))success failure:(void (^)(NSURLSessionDataTask *, NSError *))failure{
+    [self internalRequestWithDict:dict isPostMethod:NO path:[gdrURLManager getAdvertList] isJSONResponse:YES useToken:YES successBlock:success failure:failure];
+    
+}
+
+
+
+
+
+
+@end
